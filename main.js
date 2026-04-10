@@ -31,7 +31,8 @@ $(document).ready(function() {
 	var selectedArr=[]; //массив выделенных элементов
 	var historyName; //имя массива истории
 	var settingsName; //название настроек
-	let profSym='@g='; //символ разделитель между профилем и точкой, для истории
+	const profSym='@g='; //символ разделитель между профилем и точкой, для истории
+	const symCont='@%'; //сивол разделитель для номера для длительных точек, не используется
 	var preId='mapoint'; //ид перед названием точки
 	var activeongroups=1; //включать ли категории (в начале и при переключении профилей-карт)
 	var lastId; //последний ид точки-круга (для применения действий над ним)
@@ -52,6 +53,7 @@ $(document).ready(function() {
 	var dLSelected=0;//какой инструмент выбирать по умолчанию (0 - tmpLine) в режиме рисования
 	var leaderLineOptions={};//опции для постоянной линии
 	var arrPLines=[];//Массив постоянных линий
+	var arrBindLines={};//Массив линий, привязанных к точке
 	var keyBinging=-1;//Включен ли режим отлова клавиш, заодно и индекс клавиши
 	var customKeys={};//Ассоциативный массив настроек ручных назначений кнопок
 	var defaultKeys={
@@ -458,7 +460,10 @@ $(document).ready(function() {
 				tmpName=Profiles[num].GpoupList[z].replaceAll(regStyle,'');
 			}
 			//wrapMainGroups(Profiles[num].GpoupList[z])
-			groupsHtml=groupsHtml.add(wrapMainGroups(tmpName));
+			let tmpGroup=wrapMainGroups(tmpName);
+			//это list-group-item
+			tmpGroup.addClass('ngroup'+z);
+			groupsHtml=groupsHtml.add(tmpGroup);
 		}
 		//и история
 		groupsHtml=groupsHtml.add(wrapMainGroups($('#tmpHistname .langNow').html()).addClass('autohist'));
@@ -657,7 +662,7 @@ $(document).ready(function() {
 				//Раньше, когда проект создавался, предполагалось что у каждой точки(кнопки может быть несколько групп)
 				for (z=0;z<gcnt;z++){
 					//добавляет точку в список групп
-					placelisttext(group[z],pointsarr[i].Name,numi,activeongroups)
+					placelisttext(group[z],pointsarr[i],numi,activeongroups)
 				}
 			}
 			placebtn(pointsarr[i].CoordX,pointsarr[i].CoordY,numi,pointsarr[i].Name,1-activeongroups,group[0]);
@@ -685,11 +690,13 @@ $(document).ready(function() {
 		return result=TestPtProfile.ptArr.indexOf(findindex);
 	}
 	function loadhist(){
+		//Загружаем историю в группу история на странице
 		var tmplist=$('#tmplist');
 		var tmparr;
 		var tmpcnt=globhist.length;
 		var groupnum;
 		var flylist=$('#flylist .list-group-item .list-group-item-text');
+		let profileCurrent;
 		for (var i=0;i<tmpcnt;i++){
 			var newid=globhist[i];
 			if (newid.indexOf(profSym)){
@@ -708,16 +715,18 @@ $(document).ready(function() {
 			else{
 				profileCurrent=null;
 			}
-			//Если профиль не найден или не указан, пропускаем
-			//Если профиль записи не равен профилю текущей карты, пропускаем
+			//Если профиль не найден или не указан или не равен профилю текущей карты, пропускаем
 			if (profileCurrent==null || profileCurrent!=profileIndex){continue;}
-			//globhist.push(dataid+profSym+groupnum);
 			var newel=tmplist.html();
 			//у нас есть id - берем с маркеров на карте описания
-			newel = $($.parseHTML( jQuery.trim(newel.replace(/#text#/gi, $('#'+newid).attr('title')+' ('+newid.replace(preId,'')+')'))));
+			let newText=$('#'+newid).attr('title');
+			let realid=$('#'+newid).data('id');
+			newel = $($.parseHTML( jQuery.trim(newel.replace(/#text#/gi, newText+' ('+newid.replace(preId,'')+')'))));
 			//отключаем кнопки - по умолчанию
 			$('#'+newid).addClass('hide');
 			newel.data('id',newid);
+			newel.data('histId',i);
+			newel.data('continuous',(pointsarr[realid-1].continuous??false));
 			if (typeof(profileCurrent)!='undefined'){
 				newel.data('prof',self['Profiles'][profileCurrent].pointarr);
 			}
@@ -725,7 +734,7 @@ $(document).ready(function() {
 			newel.append($('<span class="icondel"></span>'));			
 			$('#flylist .autohist').find('.list-group-item-heading').after(newel);
 			//unclick btn
-			//дабл клик по кругу - ищем его id в списке и тыкаем по иконке.
+			//дабл клик по кругу - ищем его id в списке и тыкаем по иконке, нет просто отключаем активность данного текста
 			flylist.each(function(){
 				if ($(this).data('id')==newid){
 					//нашли
@@ -738,17 +747,19 @@ $(document).ready(function() {
 			UpdateCountGr(groupnum);
 		}
 	}
-	function placelisttext(groupnum,text,numpoint,setActive=0,setHide=0){
-		var flylist=$('#flylist');
-		var tmplist=$('#tmplist');
-		var newel=tmplist.html();
-		newel = $.parseHTML( jQuery.trim(newel.replace(/#text#/gi, text+' ('+numpoint+')')));
+	function placelisttext(groupnum,objElement,numpoint,setActive=0,setHide=0){
+		//let newElement={'Name':desc,'CoordX':coordX+'px','CoordY':coordY+'px','Groups':'['+group+']'};
+		let flylist=$('#flylist');
+		let tmplist=$('#tmplist');
+		let newel=tmplist.html();
+		newel = $.parseHTML( jQuery.trim(newel.replace(/#text#/gi, objElement['Name']+' ('+numpoint+')')));
 		newel=$(newel);
 		newel.data('id',preId+numpoint);
 		newel.data('group',groupnum);
+		newel.data('continuous',(objElement['continuous']??''));
 		if (setActive){newel.addClass('active');}
 		if (setHide){newel.addClass('hide');}
-		var groupsfly=flylist.find('.list-group-item').eq(groupnum);
+		let groupsfly=flylist.find('.list-group-item').eq(groupnum);
 		groupsfly.append(newel);
 	}
 	function placebtn(x,y,num,tname,thide=1,onegroup,bonusClass=''){
@@ -804,16 +815,52 @@ $(document).ready(function() {
 				self[Profiles[nindex].pointarr][tmppoint][prop]=addslashes(self[Profiles[nindex].pointarr][tmppoint][prop]);
 			}
 			ptprops+='\t\t';
+			if (prop=='Name'){
+				ptprops+='"'+prop+'" : "'+self[Profiles[nindex].pointarr][tmppoint][prop]+'",'+"\n";
+			}
+			else
+			{
 			ptprops+='\''+prop+'\' : \''+self[Profiles[nindex].pointarr][tmppoint][prop]+'\','+"\n";
+			}
 		}
 		return '\t{'+"\n"+ptprops+'\t},'+"\n";
 	}
-	function drawpointCur(el,group){
+	function drawpointCur(tmppoint,nindex,el){
+		//для вывода в файл settings, формирует массив точек текущей карты
+		//group=el.data('group');
+		let elemmap=$(el);
+		ptprops='';
+		for (prop in self[Profiles[nindex].pointarr][tmppoint]) {
+			if (prop=='PointIndex'){continue;}
+			if (prop=='Name'){
+				self[Profiles[nindex].pointarr][tmppoint][prop]=addslashes(elemmap.attr('title'));
+			}
+			if (prop=='CoordX'){
+				self[Profiles[nindex].pointarr][tmppoint][prop]=elemmap.css('left');
+			}
+			if (prop=='CoordY'){
+				self[Profiles[nindex].pointarr][tmppoint][prop]=elemmap.css('top');
+			}
+			/*if (prop=='Groups'){
+				self[Profiles[nindex].pointarr][tmppoint][prop]=pointsarr[tmppoint].Groups;
+			}*/
+			ptprops+='\t\t';
+			if (prop=='Name'){
+				ptprops+='"'+prop+'" : "'+self[Profiles[nindex].pointarr][tmppoint][prop]+'",'+"\n";
+			}
+			else
+			{
+			ptprops+='\''+prop+'\' : \''+self[Profiles[nindex].pointarr][tmppoint][prop]+'\','+"\n";
+			}
+		}
+		return '\t{'+"\n"+ptprops+'\t},'+"\n";
+	}
+	/*function drawpointCur(el,group){
 		//для вывода в файл settings, формирует массив точек текущей карты
 		var elemmap=$(el);
 		var curbtn='';
 		if (typeof(group)=='undefined' || group=='undefined'){
-			group=el.data('group');
+		group=el.data('group');
 		}
 		curbtn+="\t"+'{'+"\n";
 		curbtn+="\t\t"+"'Name':'"+addslashes(elemmap.attr('title'))+"',"+"\n";
@@ -822,16 +869,17 @@ $(document).ready(function() {
 		curbtn+="\t\t"+"'Groups':'"+"["+group+"]',"+"\n";
 		curbtn+="\t"+'},'+"\n";
 		return curbtn;
-	}
+	}*/
 	$('#flylist > .container > h2').dblclick(function(event){
 		var curtext='',alton=0;
 		var customStyles=[];
 		var elh2=$(this);
+		let newGlobhist=[]; //временный массив истории для сортировки
+		
 		//добавляем постоянные линии в профиль
 		if (arrPLines.length){
 			Profiles[profileIndex]['pLines']=JSON.stringify(arrPLines);
 		}
-		newGlobhist=[]; //временный массив истории для сортировки
 		if (event.altKey){
 			//сортируем массив ключей профиля в историческом порядке
 			alton=1;
@@ -855,7 +903,6 @@ $(document).ready(function() {
 			//сортируем массив ключей профиля в историческом порядке
 			var arrsort=[];
 			for (nindex in Profiles) {
-				//Profiles[nindex].pointarr
 				tmpsort=Object.keys(self[Profiles[nindex].pointarr]);
 				//дополняем
 				for (tmppoint in tmpsort) {
@@ -863,20 +910,29 @@ $(document).ready(function() {
 				}
 				//сортируем индексы
 				//инвертируем в случае отсутствия значения в истории - те, которых нет в истории сдвинутся вперед
+				//если и будут дубли в истории то их номер будет согласно первому вхождению индекса в истории
 				//2-3, -(-1-3)=4,-(2--3)=5,-(-1--1)=0, числа положительные, значит большие и пойдут в конец массива
 				tmpsort.sort((a, b) => ((globhist.indexOf(a)<0 || globhist.indexOf(b)<0)?-(globhist.indexOf(a) - globhist.indexOf(b)):(globhist.indexOf(a) - globhist.indexOf(b))));
 				//Переделываем историю
-				for (tmppoint in tmpsort) {
+				/*for (tmppoint in tmpsort) {
+					//а тут дубли нежелательны т.к. сбросит всю историю, это единственный косяк
 					tmppos=globhist.indexOf(tmpsort[tmppoint]);
 					if (tmppos>=0){
-						newGlobhist[tmppos]=preId+(Number(tmppoint)+Profiles[nindex].StartIndex)+profSym+Profiles[nindex].pointarr;
+					//А тут история перестраивается обратно
+					newGlobhist[tmppos]=preId+(Number(tmppoint)+Profiles[nindex].StartIndex)+profSym+Profiles[nindex].pointarr;
 					}
+				}*/
+				for (tmppoint in globhist) {
+					const oldVal = globhist[tmppoint];
+					const newIndex = tmpsort.indexOf(oldVal); // Ищем позицию в новом порядке
+					const newValus=preId+(newIndex+Profiles[nindex].StartIndex)+profSym+Profiles[nindex].pointarr;
+					newGlobhist.push(newValus); // Сохраняем индекс
 				}
 				//удаляем дополнения
 				for (tmppoint in tmpsort) {
 					tmpsort[tmppoint]=(Number(tmpsort[tmppoint].split(profSym)[0].replace(preId,''))-Profiles[nindex].StartIndex);
 				}
-				//tmparr=newid.split(profSym);
+				//arrsort - массив по номеру профиля уже отсортированных точек 
 				arrsort[nindex]=tmpsort;
 			}
 			//на выходе получаем массив нужного профиля с индексами в нужном порядке
@@ -949,13 +1005,15 @@ $(document).ready(function() {
 		if (alton){
 			for (tmppoint in arrsort[profileIndex]) {
 				el=flylist.filter('#'+preId+(Profiles[profileIndex].StartIndex+arrsort[profileIndex][tmppoint]));
-				curbtn+=drawpointCur(el,arrgroup[el.attr('id')]);
+				curbtn+=drawpointCur(arrsort[profileIndex][tmppoint],profileIndex,el);
 			}
 		}else
 		{
+			//потом переделать на поиск по pointarr, когда туда будут заноситься новые точки
 			flylist.each(function(){
 				el=$(this);
-				curbtn+=drawpointCur(el,arrgroup[el.attr('id')]);
+				ptIndex=el.data('id')-1;
+				curbtn+=drawpointCur(ptIndex,profileIndex,el);
 			});
 		}
 		//no data
@@ -990,14 +1048,16 @@ $(document).ready(function() {
 		}
 		).catch(e => {
 			console.log(e);
+			lastClip=curtext;
 		});
 		return false;
 	});
-	$(document).on('keydown',function(event){
+	$('body').add('#mainpic').on('keydown',function(event){
 		//The event.which property has been deprecated. Use event.key wherever possible.
 		//if you're using jQuery, you can reliably use which as jQuery
 		//var x = event.which || event.keyCode;
-		var key = event.which || event.keyCode;
+		//var key = event.which || event.keyCode;
+		var key = event.keyCode;
 		var el=$(event.target);
 		if (key>15 && key<19){
 			return;
@@ -1030,7 +1090,17 @@ $(document).ready(function() {
 		}
 		if (typeof(routeShow)!='undefined' && routeShow){
 			let changes=0;
-			if (key==usedKeys['drawDec']){	
+			
+			//роуты не только включены, но и есть диалог
+			let objPopupTitle=document.querySelector('.popupTitle');
+			if (objPopupTitle!=null){
+				//тут пропуск диалога, универсальный ответ да
+				if (key === 32) {
+					//пробел
+					popupDone(objPopupTitle);
+				}
+			}
+			if (key==usedKeys['drawDec']){
 				//open bracket	219	[
 				if (defRouteCount>3){
 					defRouteCount-=1;
@@ -1098,6 +1168,7 @@ $(document).ready(function() {
 				obj.css('top',(objtop+1)+'px');
 				break;
 			}
+			refreshTGuides(obj);
 		}
 		if (key==usedKeys['keymove']){
 			//keymove (k)
@@ -1121,10 +1192,6 @@ $(document).ready(function() {
 			event.preventDefault();
 			return;
 		}
-	})
-	//oneaction
-	$('body').add('#mainpic').keypress(function(event){
-		//событие устарело и желательно его избегать.
 		if (event.shiftKey && event.keyCode==68){
 			//отменяем выделение, шифт d
 			if (selectedArr.length){
@@ -1133,9 +1200,10 @@ $(document).ready(function() {
 			}
 			event.preventDefault();
 			return;
-		}
-		//console.log(event.keyCode);
+		}		
 	})
+	//событие устарело и желательно его избегать.
+	//$('body').add('#mainpic').keypress(function(event){})
 	$('#flyaoMenu .list-group-item .savemap').on('click',(event)=>{
 		var el=$(event.target);
 		if (!el.hasClass('active')){
@@ -1215,7 +1283,8 @@ $(document).ready(function() {
 		//в памяти
 		//pointsarr
 		if (desc && group){
-			self[Profiles[profileIndex].pointarr].push({'Name':desc,'CoordX':coordX+'px','CoordY':coordY+'px','Groups':'['+group+']'});
+			let newElement={'Name':desc,'CoordX':coordX+'px','CoordY':coordY+'px','Groups':'['+group+']'};
+			self[Profiles[profileIndex].pointarr].push(newElement);
 			//уже добавилось
 			//pointsarr.push({'Name':desc,'CoordX':coordX+'px','CoordY':coordY+'px','Groups':'['+group+']'});
 			//$('#mainpic').find('#'+preId+numi)
@@ -1227,7 +1296,7 @@ $(document).ready(function() {
 				numi+=Profiles[profileIndex].StartIndex;
 			}
 			//в списке
-			placelisttext(group,desc,numi,1,1);
+			placelisttext(group,newElement,numi,1,1);
 			UpdateCountGr(group);
 			//на карте
 			var bonusClass='';
@@ -1273,6 +1342,21 @@ $(document).ready(function() {
 		}
 		event.preventDefault();
 	});
+	$('#flyaoMenu .list-group-item .showRdlg').on('click',function(e){
+		//быстрые действия: показ диалога 
+		//Получаем новый маршрут
+		if (routeShow){
+			let routes=GetCurRoute();
+			let firstId;
+			if (routes.options.firstHist){
+				firstId=routes.curRoute.eq(1);
+			}
+			else{
+				firstId=routes.curRoute.eq(0);
+			}
+			showWndDesc(firstId[0].title,firstId[0]);
+		}
+	});		
 	$('#flyaoMenu .list-group-item .flipmaps').on('click',(event)=>{
 		//переворачиваем карты
 		//+Внешне надо только их перевернуть
@@ -1705,14 +1789,6 @@ $(document).ready(function() {
 		}
 		//вычисляем маршрут
 		var curRoute=$('#mainpic .mycircle').not('.hide').not(ignoreList.join(',')).slice(0,defRouteCount);
-		//var curRoute={};
-		/*curRouteOld.each(function(){
-			var dataIdFull=this.id+profSym+self['Profiles'][profileIndex].pointarr;
-			//Проверка если в игнор листе
-			if (!globIgnore.includes(dataIdFull)){
-			curRoute=jQuery.merge($(this),curRoute);
-			}
-		});*/
 		var options={};
 		//добавляем историю
 		if (globhist!==null && globhist.length){
@@ -1729,6 +1805,95 @@ $(document).ready(function() {
 		}
 		return {curRoute:curRoute,options:options};
 	}
+	function refreshTGuides(target=null){
+		let dataids=[];
+		if (!target || target.tagName=="IMG"){
+			//глобальное обновление
+			dataids=Object.keys(arrBindLines);
+		}
+		else
+		{
+			dataids.push($(target).data('id'));
+		}
+		if (dataids.length){
+			//для каждой точки
+			dataids.forEach(function(index){
+				if (arrBindLines[index]){
+					//для каждой записи
+					arrBindLines[index].forEach(function(iLine){
+						iLine.position();
+					})
+				}
+			})
+		}
+	}
+	
+	$('#tmpContMenu .list-group-item .drawtguides').on('click',function(e){
+		//контекстное меню точки: нарисовать направляющие
+		const parentel=$(this).closest('#tmpContMenu');
+		const dataid=parentel.data('itemId');
+		
+		if (!dataid){console.log('no point id');}
+		
+		let el=document.querySelector('#'+preId+dataid);
+		let  curscale=Profiles[profileIndex].zoom;
+		//const elContinuous=el.find('.addContinuous');
+		//elContinuous.removeClass('active');
+		
+		if (dataid && el && !el.classList.contains('hide')){
+			let ActiveState=this.classList.contains('active');
+			
+			if (ActiveState){
+				//вкл. - выкл.
+				if (arrBindLines[dataid]){
+					arrBindLines[dataid].forEach(function(iLine){
+						iLine.remove();
+					})
+					delete arrBindLines[dataid];
+					//выключаем индикатор
+					this.classList.remove('active');
+				}
+			}
+			else
+			{
+				let lineColor = document.querySelector('.drawingTools .setColors .back .mark')?.dataset.color || "#fff";
+				let sizelen=document.querySelector('body').getBoundingClientRect().width;
+				let clientWidth=el.clientWidth*curscale;
+				let clientHeight=el.clientHeight*curscale;
+				
+				let elStart=LeaderLine.pointAnchor(el, {x: -sizelen/2, y: 0});
+				let elend=LeaderLine.pointAnchor(el, {x: sizelen/2, y: 0});
+				let line1=new LeaderLine({start:elStart,end:elend,path:'straight',color:lineColor,dash: true,endPlug:'behind',size:1,});
+				
+				elStart=LeaderLine.pointAnchor(el, {x: -sizelen/2, y: clientHeight});
+				elend=LeaderLine.pointAnchor(el, {x: sizelen/2, y: clientHeight});
+				let line3=new LeaderLine({start:elStart,end:elend,path:'straight',color:lineColor,dash: true,endPlug:'behind',size:1,});
+				
+				
+				elStart=LeaderLine.pointAnchor(el, {x: 0, y: -sizelen/2});
+				elend=LeaderLine.pointAnchor(el, {x: 0, y: sizelen/2});
+				let line2=new LeaderLine({start:elStart,end:elend,path:'straight',color:lineColor,dash: true,endPlug:'behind',size:1,});
+				
+				elStart=LeaderLine.pointAnchor(el, {x: clientWidth, y: -sizelen/2});
+				elend=LeaderLine.pointAnchor(el, {x: clientWidth, y: sizelen/2});
+				let line4=new LeaderLine({start:elStart,end:elend,path:'straight',color:lineColor,dash: true,endPlug:'behind',size:1,});
+				
+				arrBindLines[dataid]=[];
+				arrBindLines[dataid].push(line1);
+				arrBindLines[dataid].push(line2);
+				arrBindLines[dataid].push(line3);
+				arrBindLines[dataid].push(line4);
+				//включаем/выключаем индикатор
+				this.classList.add('active');
+			}
+		}
+		else{
+			console.log('object hidden');
+		}
+		//убираем меню
+		parentel.toggleClass('hide');
+	});
+	
 	$('#tmpContMenu .list-group-item .chgroup').on('click',function(e){
 		//старый номер группы
 		var parentel=$(this).closest('#tmpContMenu');
@@ -1760,7 +1925,7 @@ $(document).ready(function() {
 					olddesc=objMetka.attr('title');
 					$(this).remove();
 					//добавляем новую запись в другую группу но с тем же номером
-					placelisttext(group,olddesc,numi,clsActive,clsHide);
+					placelisttext(group,pointsarr[numi-1],numi,clsActive,clsHide);
 					UpdateCountGr(tmpGroup);
 					UpdateCountGr(group);
 					//А также обновляем сведениия в pointsarr
@@ -1824,6 +1989,19 @@ $(document).ready(function() {
 			DeleteRoute();
 			CreateRoute();
 		}
+		event.preventDefault();
+		parentel.addClass('hide');
+	});
+	$('#tmpContMenu .list-group-item .addContinuous').on('click',function(e){
+		//добавляем свойство длительности
+		let parentel=$(this).closest('#tmpContMenu');
+		let dataid=parentel.data('itemId')-1;
+		if (typeof(pointsarr[dataid])!='undefined'){
+			pointsarr[dataid].continuous=!pointsarr[dataid].continuous;
+		}
+		//также поменяем в общем массиве, уже есть, возможно там прямые ссылки на глобальный массив
+		//self[Profiles[profileIndex].pointarr][dataid].continuous=!self[Profiles[profileIndex].pointarr][dataid].continuous;
+		//закрываем окно
 		event.preventDefault();
 		parentel.addClass('hide');
 	});
@@ -1904,7 +2082,9 @@ $(document).ready(function() {
 			tapCount = 0;
 			}, 300); // Таймаут между кликами
 		}*/
-		if (event.target.className.indexOf('mycircle')>=0){mapcircle=1;}
+		//мы нажали на точку
+		if (event.target.classList.contains('mycircle') && !event.target.classList.contains('hide') ){mapcircle=1;}
+		
 		if (event.shiftKey && mapcircle==1 && !gsize){
 			var el=event.target;
 			var elem=$(el);
@@ -1927,10 +2107,12 @@ $(document).ready(function() {
 			}, 50,el,elem,desc); // Короткая задержка в 50мс
 		}
 		else if(event.ctrlKey && mapcircle==1 && !gsize){
-			//Меняем группу, не меняем, будем выводить меню с выбором
+			//Показ меню точки
 			let el=$('#tmpContMenu');
 			let elh=el.outerHeight();
 			let menuheight=0;
+			//const elId=parseInt($(event.target).attr('id').replace( /[^\d]/g, "" ));
+			const elId=$(event.target).data('id');
 			el.toggleClass('hide');
 			el.css('left',event.pageX+'px');
 			menuheight=event.pageY;
@@ -1939,7 +2121,28 @@ $(document).ready(function() {
 				menuheight-=elh;
 			}
 			el.css('top',menuheight+'px');
-			el.data('itemId',$(event.target).attr('id').replace( /[^\d]/g, "" ));
+			el.data('itemId',elId);
+			//добавляем индикатор длительной кнопки
+			const elContinuous=el.find('.addContinuous');
+			elContinuous.removeClass('active');
+			if (elId-1>0){
+				if (pointsarr[elId-1].continuous){
+					elContinuous.addClass('active');
+				}
+				else
+				{
+					elContinuous.removeClass('active');
+				}
+			}
+			//добавляем индикатор направляющих
+			const elDrawtguides=el.find('.drawtguides');
+			if (arrBindLines[elId]){
+				elDrawtguides.addClass('active');
+			}
+			else
+			{
+				elDrawtguides.removeClass('active');
+			}
 		}
 		if (event.ctrlKey && mapcircle==0){
 			//активация лупы подсказки
@@ -2091,11 +2294,12 @@ $(document).ready(function() {
 				//удаляем фантом
 				mainpic.find('#'+preId+numi).remove();
 				if (desc != null && group != null ) {
+					let newElement={'Name':desc,'CoordX':oldx+'px','CoordY':oldy+'px','Groups':'['+group+']'};
 					//Новый номер
-					pointsarr.push({'Name':desc,'CoordX':oldx+'px','CoordY':oldy+'px','Groups':'['+group+']'});
+					pointsarr.push(newElement);
 					//надо ставить уже активный маркер
 					//Новый текст
-					placelisttext(group,desc,numi,1,1);
+					placelisttext(group,newElement,numi,1,1);
 					UpdateCountGr(group);
 					var bonusClass='';
 					//Добавляем очищалку стиля для групп точек
@@ -2172,7 +2376,7 @@ $(document).ready(function() {
 				mainpic=maptarget;
 			}
 			else if (circlept==1){
-				//круг пунктирный
+				//круг-квадрат подсказка
 				mainpic=maptarget;
 				var inwnd=inWindow(maptarget,$('#mainpic .mycircle').not('.hide'));
 				if (inwnd.length){
@@ -2280,7 +2484,7 @@ $(document).ready(function() {
 				}
 				else
 				{
-					//тоже mapcircle, но не глобальное
+					//тоже mapcircle, но уже глобальное
 					//Корректировка на основе zoom
 					if (mapcircle){
 						curscale=scaleX;
@@ -2293,6 +2497,8 @@ $(document).ready(function() {
 						mainpic.css('top',cy+'px');
 						//Также обновляем временные линии (даже если не включены маршруты)
 						refreshDirectrix();
+						//обновляем позиции направляющих если они есть
+						refreshTGuides(event.target);
 					}
 					if (typeof(routeShow)!='undefined' && routeShow){
 						//маршрут включен и это двигается центральная картинка или точка маршрута, обновляем позиции
@@ -2519,26 +2725,49 @@ $(document).ready(function() {
 		var par=el.parent(); //.list-group-item-text
 		var groupnum=par.data('group');
 		var parActive=par.hasClass('active');
+		let elContinuous=par.data('continuous');
+		
 		if (parActive){
 			//Скрываем
 			par.removeClass('active');
-			$('#'+par.data('id')).addClass('hide');
+			if (!elContinuous){
+				//кнопка длительная - не скрываем
+				$('#'+par.data('id')).addClass('hide');
+			}
 			//off - add to history
 			if (!par.parent().hasClass('autohist'))
 			{
 				//уже нельзя полагаться на profileIndex т.к. он меняется
-				//var dataid=par.data('id')+profSym+profileIndex;
 				//get number profile by pointarr
 				var dataid=par.data('id')+profSym+self['Profiles'][profileIndex].pointarr;
-				//Чтобы не было дублей
-				if (globhist!==null && !globhist.includes(dataid)){
+				let noDbl=false;
+				
+				if (elContinuous){
+					//проверяем последний элемент, если он не совпадает с нашим ид, либо истории нет
+					if (!globhist.length || globhist.at(-1)!=dataid){
+						//не совпало, дублей нет,
+						noDbl=true;
+					}
+				}
+				else
+				{
+					if (!globhist.length || !globhist.includes(dataid)){
+						noDbl=true;
+					}
+				}
+				
+				//Добавляем в историю, проверяем чтобы не было дублей
+				if (noDbl){
 					var newel=$($.parseHTML(jQuery.trim(par.get(0).outerHTML)));
 					newel.data('id',par.data('id'));
 					newel.data('prof',self['Profiles'][profileIndex].pointarr);
+					//новая запись в группу история
 					if (!$('#flylist .autohist .list-group-item-heading .text').hasClass('closed')){
 						//скрывалось в истории когда она закрыта
 						newel.removeClass('hide');
-						}else{
+					}
+					else
+					{
 						newel.addClass('hide');
 					}
 					newel.append($('<span class="icondel"></span>'));
@@ -2556,15 +2785,13 @@ $(document).ready(function() {
 					}
 				}
 			}
-			else
-			{
-			}
 		}
 		else
 		{
 			par.addClass('active');
 			$('#'+par.data('id')).removeClass('hide');
 		}
+		//доп. реакция в синхрон с историей
 		if (par.parent().hasClass('autohist')){
 			var flylist=$('#flylist .list-group-item-text').not(par);
 			var parid=par.data('id');
@@ -2599,8 +2826,10 @@ $(document).ready(function() {
 				//первый раз
 				movehist=1;
 				var el=$(this);
-				var elstr=el.data('id')+profSym+el.data('prof');
-				histMoveNum=globhist.indexOf(elstr);
+				//var elstr=el.data('id')+profSym+el.data('prof');
+				//histMoveNum=globhist.indexOf(elstr);
+				//нам лучше найти точку в истории (номер)
+				histMoveNum=el.data('histId');
 			}
 		}
 		else{
@@ -2609,6 +2838,7 @@ $(document).ready(function() {
 				movehist=0;
 				var el=$(this);
 				el.removeClass('hMove');
+				
 				var elstr=el.data('id')+profSym+el.data('prof');
 				if (histMoveNum>=0 && elstr!=globhist[histMoveNum]){
 					//удаляем первый элемент
@@ -2680,15 +2910,16 @@ $(document).ready(function() {
 	$('#mainpic').on('mouseenter','.mycircle',function(){
 		lastId=this.id;
 	});
-	$('#mainpic').on('pointerdown','.mycircle',function(){
+	$('#mainpic').on('pointerdown','.mycircle',function(event){
 		//показываем диалог
 		//const clickElement=this;
-		//показываем диалог только если включен мобильный, либо если включены маршруты
-		if (detMob || (typeof(routeShow)!='undefined' && routeShow) ){
+		//показываем диалог только если включен мобильный
+		if (detMob ){
 			showWndDesc(this.title,this);
 		}
 	});
 	function showWndDesc(cText, circleElement) {
+		//диалог для быстрого прохода по текущим роутам
 		let closeWnd=0;
 		//id
 		const circleId=$(circleElement).data('id');
@@ -2758,19 +2989,33 @@ $(document).ready(function() {
 		});
 		// Обработчик успешного завершения операции
 		popup.querySelector('.popup-done').addEventListener('click', (e) => {
-			const popup=e.target.closest('.popupTitle');
-			const curId=parseInt(popup.dataset.id);
-			mycircleDblclick(preId+curId);
-			popup.remove();
-			//если включены маршруты, открываем новый попап
-			if (typeof(routeShow)!='undefined' && routeShow){recallWndDesc();}
+			popupDone(e.target.closest('.popupTitle'));
 		});
-		
-		// Обработчик закрытия
+		// обработчик сворачивания
 		popup.querySelector('.popup-close').addEventListener('click', () => {
 			popup.remove();
 		});
 		
+		// Обработчик закрытия
+		popup.querySelector('.popup-minimize').addEventListener('click', () => {
+			const clsName='minimized';
+			let pHidden=popup.classList.contains(clsName);
+			if (pHidden){
+				popup.classList.remove(clsName);
+			}
+			else
+			{
+				popup.classList.add(clsName);
+			}
+		});
+		
+	}
+	function popupDone(popup){
+		const curId=parseInt(popup.dataset.id);
+		mycircleDblclick(preId+curId);
+		popup.remove();
+		//если включены маршруты, открываем новый попап
+		if (typeof(routeShow)!='undefined' && routeShow){recallWndDesc();}
 	}
 	function recallWndDesc(){
 		//ищем новый ид по маршрутам	
@@ -3232,7 +3477,7 @@ $(document).ready(function() {
 		let base = document.querySelector('base');
 		const isGitHub = window.location.host.includes('github.io');
 		const repoName = window.location.pathname.split('/')[1] || '';
-		if (isGitHub){
+		if (isGitHub && repoName){
 			let base = document.createElement('base');
 			base.href = `/${repoName}/`;
 			document.head.prepend(base);
@@ -3241,4 +3486,4 @@ $(document).ready(function() {
 	function detectMob() {
 		return ( ( window.innerWidth <= 800 ));
 	}
-});												
+});																					
